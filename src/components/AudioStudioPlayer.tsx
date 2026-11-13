@@ -9,6 +9,8 @@ interface AudioStudioPlayerProps {
   audioUrl: string | null;
   voiceName: string;
   toneId: ToneId;
+  languageLabel?: string;
+  originalDiction?: boolean;
   scriptText?: string;
 }
 
@@ -16,6 +18,8 @@ export const AudioStudioPlayer: React.FC<AudioStudioPlayerProps> = ({
   audioUrl,
   voiceName,
   toneId,
+  languageLabel,
+  originalDiction,
   scriptText
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -133,10 +137,15 @@ export const AudioStudioPlayer: React.FC<AudioStudioPlayerProps> = ({
           </h3>
         </div>
 
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center gap-2 text-xs flex-wrap">
           <span className="px-2.5 py-1 rounded-md bg-[#24252E] text-[#C6FF5B] border border-[#C6FF5B]/30 font-medium">
             Voix : {voiceName}
           </span>
+          {languageLabel && (
+            <span className="px-2.5 py-1 rounded-md bg-[#24252E] text-[#E4E4E7] border border-[#32323E] font-medium">
+              {languageLabel}{originalDiction ? ' • Diction originale' : ''}
+            </span>
+          )}
           <span className="px-2.5 py-1 rounded-md bg-[#24252E] text-[#D4D4D8] border border-[#32323E] font-medium">
             Style : {tone?.label || toneId}
           </span>

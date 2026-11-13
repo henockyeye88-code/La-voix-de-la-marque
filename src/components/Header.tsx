@@ -20,58 +20,60 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header className="border-b border-[#23232C] bg-[#14151B]/95 backdrop-blur-md sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-0 sm:h-20 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
         {/* Brand identity */}
-        <div className="flex items-center gap-3.5">
-          <div
-            onClick={() => onTabChange('studio')}
-            className="w-11 h-11 rounded-xl bg-[#1B1B21] border border-[#2B2B36] flex items-center justify-center text-[#C6FF5B] shadow-[0_0_20px_rgba(198,255,91,0.15)] cursor-pointer"
-          >
-            <Volume2 className="w-6 h-6 animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span
-                onClick={() => onTabChange('studio')}
-                className="text-lg sm:text-xl font-bold tracking-tight text-[#F4F4F5] cursor-pointer hover:text-white transition"
-              >
-                La voix de la marque
-              </span>
-              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 rounded-full bg-[#C6FF5B]/10 text-[#C6FF5B] border border-[#C6FF5B]/20">
-                <Sparkles className="w-2.5 h-2.5" /> Studio TTS
-              </span>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              onClick={() => onTabChange('studio')}
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-[#1B1B21] border border-[#2B2B36] flex items-center justify-center text-[#C6FF5B] shadow-[0_0_20px_rgba(198,255,91,0.15)] cursor-pointer shrink-0"
+            >
+              <Volume2 className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse" />
             </div>
-            <p className="text-xs text-[#9CA3AF] tracking-wide hidden sm:block">
-              Votre texte. Votre voix. Votre identité.
-            </p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span
+                  onClick={() => onTabChange('studio')}
+                  className="text-base sm:text-xl font-bold tracking-tight text-[#F4F4F5] cursor-pointer hover:text-white transition whitespace-nowrap truncate"
+                >
+                  La voix de la marque
+                </span>
+                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 rounded-full bg-[#C6FF5B]/10 text-[#C6FF5B] border border-[#C6FF5B]/20 shrink-0">
+                  <Sparkles className="w-2.5 h-2.5" /> Studio TTS
+                </span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-[#9CA3AF] tracking-wide truncate">
+                Votre texte. Votre voix. Votre identité.
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Center: Navigation tabs */}
-        <nav className="flex items-center gap-1 bg-[#1A1A22] p-1.5 rounded-2xl border border-[#282937]">
+        <nav className="flex items-center justify-center gap-1 bg-[#1A1A22] p-1 rounded-2xl border border-[#282937] w-full sm:w-auto shrink-0">
           <button
             type="button"
             onClick={() => onTabChange('studio')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
               activeTab === 'studio'
                 ? 'bg-[#C6FF5B] text-[#101114] shadow-sm'
                 : 'text-[#9CA3AF] hover:text-[#F4F4F5] hover:bg-[#22232E]'
             }`}
           >
-            <Mic2 className="w-3.5 h-3.5" />
+            <Mic2 className="w-3.5 h-3.5 shrink-0" />
             <span>Studio Voix off</span>
           </button>
 
           <button
             type="button"
             onClick={() => onTabChange('avatars')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
               activeTab === 'avatars'
                 ? 'bg-[#C6FF5B] text-[#101114] shadow-sm'
                 : 'text-[#9CA3AF] hover:text-[#F4F4F5] hover:bg-[#22232E]'
             }`}
           >
-            <Users className="w-3.5 h-3.5" />
+            <Users className="w-3.5 h-3.5 shrink-0" />
             <span>Mes avatars vocaux</span>
             <span
               className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${

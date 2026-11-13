@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { ScriptEditor } from './components/ScriptEditor';
 import { VoiceSelector } from './components/VoiceSelector';
+import { LanguageSelector } from './components/LanguageSelector';
 import { ToneSelector } from './components/ToneSelector';
 import { AudioStudioPlayer } from './components/AudioStudioPlayer';
 import { DownloadPanel } from './components/DownloadPanel';
@@ -11,10 +12,18 @@ import { AvatarLibrary } from './components/AvatarLibrary';
 import { AvatarModal } from './components/AvatarModal';
 import { DEFAULT_VOICE_ID, GEMINI_VOICES } from './constants/voices';
 import { DEFAULT_TONE_ID, GEMINI_TONES } from './constants/tones';
-import { ToneId, ScriptPreset, CreationHistoryItem, GenerateTTSResponse } from './types/tts';
+import { DEFAULT_LANGUAGE_ID, VOICE_LANGUAGES_MAP } from './constants/languages';
+import {
+  ToneId,
+  ScriptPreset,
+  CreationHistoryItem,
+  GenerateTTSResponse,
+  VoiceLanguageId,
+  VoiceOption
+} from './types/tts';
 import { VoiceAvatar, AvatarListResponse } from './types/avatar';
 import { Play, Sparkles, Loader2, Wand2, Shield, Users, Mic2 } from 'lucide-react';
-import { countWords, estimateReadingDurationSec, formatDurationHumanFr } from './utils/textStats';
+import { MAX_SCRIPT_CHARACTERS, countWords, estimateReadingDurationSec, formatDurationHumanFr } from './utils/textStats';
 
 const LOCAL_STORAGE_KEY = 'la_voix_de_la_marque_history_v1';
 const MAX_AVATARS_LIMIT = 6;
@@ -27,6 +36,8 @@ export default function App() {
   const [text, setText] = useState<string>('');
   const [voiceSource, setVoiceSource] = useState<'gemini' | 'avatar'>('gemini');
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>(DEFAULT_VOICE_ID);
+  const [selectedLanguageId, setSelectedLanguageId] = useState<VoiceLanguageId>(DEFAULT_LANGUAGE_ID);
+  const [originalDiction, setOriginalDiction] = useState<boolean>(true);
   const [selectedAvatarId, setSelectedAvatarId] = useState<string | null>(null);
   const [selectedToneId, setSelectedToneId] = useState<ToneId>(DEFAULT_TONE_ID);
 
@@ -40,6 +51,8 @@ export default function App() {
   const [wavBuffer, setWavBuffer] = useState<Uint8Array | null>(null);
   const [lastGeneratedVoice, setLastGeneratedVoice] = useState<string>(DEFAULT_VOICE_ID);
   const [lastGeneratedTone, setLastGeneratedTone] = useState<ToneId>(DEFAULT_TONE_ID);
+  const [lastGeneratedLanguageLabel, setLastGeneratedLanguageLabel] = useState<string>('Français');
+  const [lastGeneratedOriginalDiction, setLastGeneratedOriginalDiction] = useState<boolean>(true);
 
   // API Status & Avatars
   const [apiConfigured, setApiConfigured] = useState<boolean>(false);
@@ -115,7 +128,19 @@ export default function App() {
     if (preset.recommendedTone) {
       setSelectedToneId(preset.recommendedTone);
     }
+    if (preset.recommendedLanguageId) {
+      setSelectedLanguageId(preset.recommendedLanguageId);
+    }
     setErrorMessage(null);
+  };
+
+  // Voice selection handler (syncs recommended African language when choosing an African voice persona)
+  const handleSelectVoice = (voice: VoiceOption) => {
+    setSelectedVoiceId(voice.id);
+    if (voice.recommendedLanguageId) {
+      setSelectedLanguageId(voice.recommendedLanguageId);
+      setOriginalDiction(true);
+    }
   };
 
   // Avatar actions
@@ -171,8 +196,10 @@ export default function App() {
       return;
     }
 
-    if (text.length > 5000) {
-      setErrorMessage('Le texte dépasse la limite de 5 000 caractères.');
+    if (text.length > MAX_SCRIPT_CHARACTERS) {
+      setErrorMessage(
+        `Le texte dépasse la limite de ${MAX_SCRIPT_CHARACTERS.toLocaleString('fr-FR')} caractères.`
+      );
       return;
     }
 
@@ -196,7 +223,9 @@ export default function App() {
           voiceSource,
           voiceName: voiceSource === 'gemini' ? selectedVoiceId : undefined,
           avatarId: voiceSource === 'avatar' ? selectedAvatarId : undefined,
-          toneId: selectedToneId
+          toneId: selectedToneId,
+          languageId: selectedLanguageId,
+          originalDiction
         })
       });
 
@@ -225,13 +254,17 @@ export default function App() {
       const effectiveVoiceName =
         data.voiceSource === 'avatar'
           ? data.avatarName || 'Avatar personnalisé'
-          : data.voiceName || selectedVoiceId;
+          : data.voiceLabel || data.voiceName || selectedVoiceId;
 
       setWavBuffer(bytes);
       setAudioBlob(blob);
       setAudioUrl(newUrl);
       setLastGeneratedVoice(effectiveVoiceName);
       setLastGeneratedTone(data.toneId || selectedToneId);
+      setLastGeneratedLanguageLabel(
+        data.languageLabel || VOICE_LANGUAGES_MAP[selectedLanguageId]?.shortLabel || 'Français'
+      );
+      setLastGeneratedOriginalDiction(data.originalDiction ?? originalDiction);
 
       // Save to history
       const words = countWords(text);
@@ -241,8 +274,11 @@ export default function App() {
         timestamp: Date.now(),
         textSnippet: text.trim().slice(0, 110) + (text.length > 110 ? '…' : ''),
         fullText: text.trim(),
+        voiceId: voiceSource === 'gemini' ? selectedVoiceId : undefined,
         voiceName: effectiveVoiceName,
         toneId: data.toneId || selectedToneId,
+        languageId: data.languageId || selectedLanguageId,
+        originalDiction: data.originalDiction ?? originalDiction,
         durationFormatted: formatDurationHumanFr(estSec)
       };
 
@@ -268,11 +304,28 @@ export default function App() {
     }
   };
 
-  const handleLoadScript = (fullText: string, voiceName: string, toneId: ToneId) => {
+  const handleLoadScript = (
+    fullText: string,
+    voiceIdOrName: string,
+    toneId: ToneId,
+    languageId?: VoiceLanguageId,
+    savedOriginalDiction?: boolean
+  ) => {
     setText(fullText);
     setVoiceSource('gemini');
-    setSelectedVoiceId(voiceName);
+    const matchedVoice = GEMINI_VOICES.find(
+      (v) => v.id === voiceIdOrName || v.name === voiceIdOrName
+    );
+    if (matchedVoice) {
+      setSelectedVoiceId(matchedVoice.id);
+    }
     setSelectedToneId(toneId);
+    if (languageId && VOICE_LANGUAGES_MAP[languageId]) {
+      setSelectedLanguageId(languageId);
+    }
+    if (typeof savedOriginalDiction === 'boolean') {
+      setOriginalDiction(savedOriginalDiction);
+    }
     setErrorMessage(null);
     setActiveTab('studio');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -290,6 +343,7 @@ export default function App() {
   const currentVoiceObj = GEMINI_VOICES.find((v) => v.id === selectedVoiceId) || GEMINI_VOICES[0];
   const currentAvatarObj = avatars.find((a) => a.id === selectedAvatarId);
   const currentToneObj = GEMINI_TONES[selectedToneId];
+  const currentLanguageObj = VOICE_LANGUAGES_MAP[selectedLanguageId] || VOICE_LANGUAGES_MAP['fr-standard'];
 
   return (
     <div className="min-h-screen bg-[#101114] text-[#F4F4F5] flex flex-col">
@@ -376,6 +430,8 @@ export default function App() {
                     audioUrl={audioUrl}
                     voiceName={lastGeneratedVoice}
                     toneId={lastGeneratedTone}
+                    languageLabel={lastGeneratedLanguageLabel}
+                    originalDiction={lastGeneratedOriginalDiction}
                     scriptText={text}
                   />
 
@@ -395,25 +451,35 @@ export default function App() {
               />
             </div>
 
-            {/* RIGHT COLUMN: Tone selector, Voice catalog (with Gemini + Avatars), Summary */}
+            {/* RIGHT COLUMN: Language & Original Diction, Voice catalog, Tone selector, Summary */}
             <div className="lg:col-span-5 flex flex-col gap-6 sticky lg:top-28">
-              {/* Tone Selector */}
-              <ToneSelector
-                selectedToneId={selectedToneId}
-                onSelectTone={setSelectedToneId}
+              {/* Language & Original Diction Selector */}
+              <LanguageSelector
+                selectedLanguageId={selectedLanguageId}
+                onSelectLanguage={setSelectedLanguageId}
+                originalDiction={originalDiction}
+                onToggleOriginalDiction={setOriginalDiction}
                 disabled={isLoading}
               />
 
-              {/* Voice Selector with Gemini & Custom Avatars tabs */}
+              {/* Voice Selector with Gemini / African & Custom Avatars tabs */}
               <VoiceSelector
                 voiceSource={voiceSource}
                 onVoiceSourceChange={setVoiceSource}
                 selectedVoiceId={selectedVoiceId}
-                onSelectVoice={setSelectedVoiceId}
+                onSelectVoice={handleSelectVoice}
+                selectedLanguageId={selectedLanguageId}
                 selectedAvatarId={selectedAvatarId}
                 onSelectAvatar={(av) => setSelectedAvatarId(av.id)}
                 avatars={avatars}
                 onOpenCreateAvatar={handleOpenCreateModal}
+                disabled={isLoading}
+              />
+
+              {/* Tone Selector */}
+              <ToneSelector
+                selectedToneId={selectedToneId}
+                onSelectTone={setSelectedToneId}
                 disabled={isLoading}
               />
 
@@ -424,31 +490,45 @@ export default function App() {
                     <Wand2 className="w-4 h-4 text-[#C6FF5B]" /> Configuration active
                   </span>
                   <span className="font-mono text-[11px] text-[#C6FF5B]">
-                    {voiceSource === 'gemini' ? 'Gemini TTS' : 'Avatar Personnel'}
+                    {voiceSource === 'gemini'
+                      ? currentVoiceObj.region === 'africaine'
+                        ? 'Voix Africaine • Gemini'
+                        : 'Gemini TTS'
+                      : 'Avatar Personnel'}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 text-[#D4D4D8]">
+                <div className="grid grid-cols-3 gap-3 text-[#D4D4D8]">
                   <div>
-                    <div className="text-[11px] text-[#9CA3AF]">Voix choisie</div>
-                    <div className="font-semibold text-sm text-[#F4F4F5] mt-0.5 truncate">
+                    <div className="text-[11px] text-[#9CA3AF]">Voix</div>
+                    <div className="font-semibold text-xs sm:text-sm text-[#F4F4F5] mt-0.5 truncate">
                       {voiceSource === 'gemini'
                         ? currentVoiceObj.name
                         : currentAvatarObj?.name || 'Aucun avatar'}
                     </div>
-                    <div className="text-[11px] text-[#C6FF5B]">
+                    <div className="text-[10px] text-[#C6FF5B] truncate">
                       {voiceSource === 'gemini'
-                        ? currentVoiceObj.characteristic
+                        ? currentVoiceObj.originTag || currentVoiceObj.characteristic
                         : 'Voix personnalisée'}
                     </div>
                   </div>
 
                   <div>
-                    <div className="text-[11px] text-[#9CA3AF]">Intention & Ton</div>
-                    <div className="font-semibold text-sm text-[#F4F4F5] mt-0.5">
+                    <div className="text-[11px] text-[#9CA3AF]">Diction</div>
+                    <div className="font-semibold text-xs sm:text-sm text-[#F4F4F5] mt-0.5 truncate">
+                      {currentLanguageObj.shortLabel}
+                    </div>
+                    <div className="text-[10px] text-[#C6FF5B] truncate">
+                      {originalDiction ? 'Purement originale' : 'Standard'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] text-[#9CA3AF]">Intention</div>
+                    <div className="font-semibold text-xs sm:text-sm text-[#F4F4F5] mt-0.5 truncate">
                       {currentToneObj.label}
                     </div>
-                    <div className="text-[11px] text-[#9CA3AF] line-clamp-1">
+                    <div className="text-[10px] text-[#9CA3AF] truncate">
                       {currentToneObj.tagline}
                     </div>
                   </div>

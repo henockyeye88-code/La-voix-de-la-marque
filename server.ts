@@ -15,6 +15,12 @@ import {
   CURRENT_CONSENT_VERSION
 } from './src/server/avatarStore';
 import { ElevenLabsVoiceProvider } from './src/server/voiceProvider';
+import { GEMINI_VOICES } from './src/constants/voices';
+import { VOICE_LANGUAGES } from './src/constants/languages';
+import {
+  buildGeminiTTSConfig,
+  STANDARD_TTS_MODEL
+} from './src/utils/voiceStyleBuilder';
 
 dotenv.config();
 
@@ -27,26 +33,13 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 
 // Known Gemini voices and tone instructions
-const ALLOWED_VOICES = new Set([
-  'Kore',
-  'Puck',
-  'Charon',
-  'Fenrir',
-  'Aoede',
-  'Leda',
-  'Orus',
-  'Zephyr',
-  'Sulafat',
-  'Achird'
-]);
-
 const TONE_INSTRUCTIONS: Record<string, string> = {
   calme: 'Voix posée, douce, rassurante, chaleureuse, débit modéré, pauses naturelles et articulation claire.',
   energique: 'Voix dynamique, vivante, expressive, enthousiaste, rythme soutenu, articulation nette et intonation engageante.',
   narrateur: 'Voix professionnelle, assurée, immersive, diction précise, rythme maîtrisé et intonation adaptée à une narration de marque.'
 };
 
-const DEFAULT_MODEL = 'gemini-3.8-flash-lite-tts';
+const DEFAULT_MODEL = STANDARD_TTS_MODEL;
 
 // Voice cloning provider (ElevenLabs)
 const cloningProvider = new ElevenLabsVoiceProvider();
@@ -73,7 +66,8 @@ app.get('/api/status', (req, res) => {
   res.json({
     hasApiKey: hasKey,
     model: DEFAULT_MODEL,
-    supportedVoices: Array.from(ALLOWED_VOICES),
+    supportedVoices: GEMINI_VOICES.map((v) => v.id),
+    supportedLanguages: VOICE_LANGUAGES.map((l) => l.id),
     cloningConfigured: cloningProvider.isConfigured(),
     cloningProvider: cloningProvider.name,
     maxAvatarsLimit: MAX_AVATARS_LIMIT
@@ -287,7 +281,15 @@ app.delete('/api/avatars/:id', async (req, res) => {
 
 app.post('/api/tts/generate', async (req, res) => {
   try {
-    const { text, voiceName = 'Kore', avatarId, voiceSource = 'gemini', toneId = 'narrateur' } = req.body;
+    const {
+      text,
+      voiceName = 'Kore',
+      avatarId,
+      voiceSource = 'gemini',
+      toneId = 'narrateur',
+      languageId = 'fr-standard',
+      originalDiction = true
+    } = req.body;
 
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({
@@ -341,13 +343,18 @@ app.post('/api/tts/generate', async (req, res) => {
         avatarId: targetAvatar.id,
         avatarName: targetAvatar.name,
         toneId,
+        languageId,
         provider: 'elevenlabs'
       });
     }
 
-    // Route B: Gemini TTS (Prebuilt Voices)
-    const selectedVoice = ALLOWED_VOICES.has(voiceName) ? voiceName : 'Kore';
-    const styleInstruction = TONE_INSTRUCTIONS[toneId] || TONE_INSTRUCTIONS.narrateur;
+    // Route B: Gemini TTS (African Personas & Prebuilt Voices with Pure Original Diction)
+    const ttsConfig = buildGeminiTTSConfig({
+      voiceId: voiceName,
+      languageId,
+      toneId,
+      originalDiction
+    });
 
     const ai = getGeminiClient();
     if (!ai) {
@@ -358,31 +365,50 @@ app.post('/api/tts/generate', async (req, res) => {
       });
     }
 
-    // Call Gemini Text-to-Speech API
-    const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: text.trim(),
-              speechMetadata: {
-                style: styleInstruction
+    const callGeminiTTS = async (modelToUse: string) => {
+      return ai.models.generateContent({
+        model: modelToUse,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: text.trim(),
+                speechMetadata: {
+                  style: ttsConfig.styleInstruction
+                }
               }
+            ]
+          }
+        ],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: ttsConfig.geminiVoiceName }
             }
-          ]
-        }
-      ],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: selectedVoice }
           }
         }
+      });
+    };
+
+    let usedModel = ttsConfig.model;
+    let response;
+    try {
+      response = await callGeminiTTS(usedModel);
+    } catch (primaryErr: any) {
+      const primaryMsg = primaryErr?.message || '';
+      // Graceful fallback to standard TTS model only if flagship Voice Design model is unavailable
+      if (
+        usedModel !== STANDARD_TTS_MODEL &&
+        (primaryMsg.includes('404') || primaryMsg.includes('not found') || primaryMsg.includes('unavailable'))
+      ) {
+        usedModel = STANDARD_TTS_MODEL;
+        response = await callGeminiTTS(usedModel);
+      } else {
+        throw primaryErr;
       }
-    });
+    }
 
     const candidate = response.candidates?.[0];
     const audioPart = candidate?.content?.parts?.find(
@@ -405,9 +431,13 @@ app.post('/api/tts/generate', async (req, res) => {
       audioBase64: base64Audio,
       mimeType,
       voiceSource: 'gemini',
-      voiceName: selectedVoice,
-      toneId,
-      model: DEFAULT_MODEL
+      voiceName: ttsConfig.voiceOption.id,
+      voiceLabel: ttsConfig.voiceOption.name,
+      toneId: ttsConfig.toneId,
+      languageId: ttsConfig.languageOption.id,
+      languageLabel: ttsConfig.languageOption.shortLabel,
+      originalDiction: ttsConfig.originalDiction,
+      model: usedModel
     });
   } catch (err: any) {
     console.error('TTS Generation error:', err);
@@ -444,14 +474,24 @@ const auditionCache = new Map<string, string>();
 app.get('/api/tts/audition/:voiceName', async (req, res) => {
   try {
     const { voiceName } = req.params;
-    const selectedVoice = ALLOWED_VOICES.has(voiceName) ? voiceName : 'Kore';
+    const langParam = typeof req.query.lang === 'string' ? req.query.lang : undefined;
 
-    if (auditionCache.has(selectedVoice)) {
+    const ttsConfig = buildGeminiTTSConfig({
+      voiceId: voiceName,
+      languageId: langParam,
+      toneId: 'calme',
+      originalDiction: true
+    });
+
+    const cacheKey = `${ttsConfig.voiceOption.id}:${ttsConfig.languageOption.id}`;
+
+    if (auditionCache.has(cacheKey)) {
       return res.json({
         success: true,
-        audioBase64: auditionCache.get(selectedVoice),
+        audioBase64: auditionCache.get(cacheKey),
         mimeType: 'audio/wav',
-        voiceName: selectedVoice
+        voiceName: ttsConfig.voiceOption.id,
+        languageId: ttsConfig.languageOption.id
       });
     }
 
@@ -463,32 +503,50 @@ app.get('/api/tts/audition/:voiceName', async (req, res) => {
       });
     }
 
-    const samplePrompt = `Bonjour, je suis la voix ${selectedVoice}, conçue pour donner vie à votre marque.`;
+    // Use native voice audition text when available (unless user explicitly overrode with another language)
+    const samplePrompt =
+      !langParam && ttsConfig.voiceOption.auditionText
+        ? ttsConfig.voiceOption.auditionText
+        : ttsConfig.languageOption.id === 'fr-standard'
+        ? `Bonjour, je suis la voix ${ttsConfig.voiceOption.name}, conçue pour donner vie à votre marque.`
+        : ttsConfig.languageOption.auditionSampleText;
 
-    const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: samplePrompt,
-              speechMetadata: {
-                style: 'Voix claire, élégante et chaleureuse.'
+    const runAudition = async (modelToUse: string) =>
+      ai.models.generateContent({
+        model: modelToUse,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: samplePrompt,
+                speechMetadata: {
+                  style: ttsConfig.styleInstruction
+                }
               }
+            ]
+          }
+        ],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: ttsConfig.geminiVoiceName }
             }
-          ]
-        }
-      ],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: selectedVoice }
           }
         }
+      });
+
+    let response;
+    try {
+      response = await runAudition(ttsConfig.model);
+    } catch (primaryErr: any) {
+      if (ttsConfig.model !== STANDARD_TTS_MODEL) {
+        response = await runAudition(STANDARD_TTS_MODEL);
+      } else {
+        throw primaryErr;
       }
-    });
+    }
 
     const candidate = response.candidates?.[0];
     const audioPart = candidate?.content?.parts?.find(
@@ -496,12 +554,13 @@ app.get('/api/tts/audition/:voiceName', async (req, res) => {
     );
 
     if (audioPart?.inlineData?.data) {
-      auditionCache.set(selectedVoice, audioPart.inlineData.data);
+      auditionCache.set(cacheKey, audioPart.inlineData.data);
       return res.json({
         success: true,
         audioBase64: audioPart.inlineData.data,
         mimeType: 'audio/wav',
-        voiceName: selectedVoice
+        voiceName: ttsConfig.voiceOption.id,
+        languageId: ttsConfig.languageOption.id
       });
     }
 

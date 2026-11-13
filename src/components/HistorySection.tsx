@@ -5,7 +5,13 @@ import { GEMINI_TONES } from '../constants/tones';
 
 interface HistorySectionProps {
   items: CreationHistoryItem[];
-  onLoadScript: (fullText: string, voiceName: string, toneId: any) => void;
+  onLoadScript: (
+    fullText: string,
+    voiceIdOrName: string,
+    toneId: any,
+    languageId?: any,
+    originalDiction?: boolean
+  ) => void;
   onClearHistory: () => void;
   disabled?: boolean;
 }
@@ -79,7 +85,15 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
                 <button
                   type="button"
                   disabled={disabled}
-                  onClick={() => onLoadScript(item.fullText, item.voiceName, item.toneId)}
+                  onClick={() =>
+                    onLoadScript(
+                      item.fullText,
+                      item.voiceId || item.voiceName,
+                      item.toneId,
+                      item.languageId,
+                      item.originalDiction
+                    )
+                  }
                   className="flex items-center gap-1 text-xs text-[#C6FF5B] hover:text-[#b4f53c] font-medium cursor-pointer"
                 >
                   <span>Recharger ce script</span>

@@ -1,14 +1,17 @@
-import React, { useState, useRef } from 'react';
-import { Mic, Check, Play, Square, Loader2, Sparkles, Users, Plus, Calendar } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Mic, Check, Play, Square, Loader2, Sparkles, Users, Calendar, Globe } from 'lucide-react';
 import { GEMINI_VOICES } from '../constants/voices';
-import { VoiceOption, VoiceGender } from '../types/tts';
+import { VoiceGender, VoiceLanguageId, VoiceOption } from '../types/tts';
 import { VoiceAvatar } from '../types/avatar';
+
+type VoiceFilter = 'Toutes' | 'Africaines' | VoiceGender;
 
 interface VoiceSelectorProps {
   voiceSource: 'gemini' | 'avatar';
   onVoiceSourceChange: (source: 'gemini' | 'avatar') => void;
   selectedVoiceId: string;
-  onSelectVoice: (voiceId: string) => void;
+  onSelectVoice: (voice: VoiceOption) => void;
+  selectedLanguageId: VoiceLanguageId;
   selectedAvatarId: string | null;
   onSelectAvatar: (avatar: VoiceAvatar) => void;
   avatars: VoiceAvatar[];
@@ -21,27 +24,46 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
   onVoiceSourceChange,
   selectedVoiceId,
   onSelectVoice,
+  selectedLanguageId,
   selectedAvatarId,
   onSelectAvatar,
   avatars,
   onOpenCreateAvatar,
   disabled = false
 }) => {
-  const [genderFilter, setGenderFilter] = useState<'Tous' | VoiceGender>('Tous');
+  const [activeFilter, setActiveFilter] = useState<VoiceFilter>(() => {
+    const initial = GEMINI_VOICES.find((v) => v.id === selectedVoiceId);
+    return initial?.region === 'africaine' ? 'Africaines' : 'Toutes';
+  });
   const [auditioningVoice, setAuditioningVoice] = useState<string | null>(null);
   const [loadingAudition, setLoadingAudition] = useState<string | null>(null);
 
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
+  useEffect(() => {
+    const current = GEMINI_VOICES.find((v) => v.id === selectedVoiceId);
+    if (!current) return;
+    const isVisibleInCurrentFilter =
+      activeFilter === 'Toutes' ||
+      (activeFilter === 'Africaines' && current.region === 'africaine') ||
+      current.gender === activeFilter;
+    if (!isVisibleInCurrentFilter) {
+      setActiveFilter(current.region === 'africaine' ? 'Africaines' : 'Toutes');
+    }
+  }, [selectedVoiceId]);
+
+  const africanCount = GEMINI_VOICES.filter((v) => v.region === 'africaine').length;
+
   const filteredVoices = GEMINI_VOICES.filter((voice) => {
-    if (genderFilter === 'Tous') return true;
-    return voice.gender === genderFilter;
+    if (activeFilter === 'Toutes') return true;
+    if (activeFilter === 'Africaines') return voice.region === 'africaine';
+    return voice.gender === activeFilter;
   });
 
-  const handleAudition = async (e: React.MouseEvent, voiceId: string) => {
+  const handleAudition = async (e: React.MouseEvent, voice: VoiceOption) => {
     e.stopPropagation();
 
-    if (auditioningVoice === voiceId) {
+    if (auditioningVoice === voice.id) {
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
       }
@@ -50,8 +72,13 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
     }
 
     try {
-      setLoadingAudition(voiceId);
-      const res = await fetch(`/api/tts/audition/${voiceId}`);
+      setLoadingAudition(voice.id);
+      // For international voices, audition in the currently selected language; for African personas, use their native sample unless another African language is explicitly active
+      const query =
+        voice.region === 'internationale' && selectedLanguageId !== 'fr-standard'
+          ? `?lang=${encodeURIComponent(selectedLanguageId)}`
+          : '';
+      const res = await fetch(`/api/tts/audition/${encodeURIComponent(voice.id)}${query}`);
       const data = await res.json();
 
       if (data.success && data.audioBase64) {
@@ -67,7 +94,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
         };
 
         await audio.play();
-        setAuditioningVoice(voiceId);
+        setAuditioningVoice(voice.id);
       }
     } catch (err) {
       console.error('Audition error:', err);
@@ -92,7 +119,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
             }`}
           >
             <Mic className="w-3.5 h-3.5" />
-            <span>Voix Gemini</span>
+            <span>Voix Studio</span>
           </button>
 
           <button
@@ -119,22 +146,33 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
           </button>
         </div>
 
-        {/* Gemini Sub-filter pills (only when in Gemini tab) */}
+        {/* Filter pills */}
         {voiceSource === 'gemini' && (
-          <div className="flex items-center gap-1 bg-[#14151B] p-1 rounded-lg border border-[#262732] text-xs">
-            {(['Tous', 'Féminin', 'Masculin', 'Neutre'] as const).map((filter) => (
+          <div className="flex items-center gap-1 bg-[#14151B] p-1 rounded-lg border border-[#262732] text-xs flex-wrap">
+            {(['Africaines', 'Toutes', 'Féminin', 'Masculin', 'Neutre'] as const).map((filter) => (
               <button
                 key={filter}
                 type="button"
                 disabled={disabled}
-                onClick={() => setGenderFilter(filter)}
-                className={`px-2 py-0.5 rounded transition font-medium cursor-pointer text-[11px] ${
-                  genderFilter === filter
+                onClick={() => setActiveFilter(filter)}
+                className={`px-2 py-0.5 rounded transition font-medium cursor-pointer text-[11px] flex items-center gap-1 ${
+                  activeFilter === filter
                     ? 'bg-[#C6FF5B] text-[#101114] font-semibold shadow-sm'
                     : 'text-[#9CA3AF] hover:text-[#E4E4E7]'
                 }`}
               >
-                {filter === 'Tous' ? 'Toutes' : filter === 'Féminin' ? 'Fém.' : filter === 'Masculin' ? 'Masc.' : 'Neutre'}
+                {filter === 'Africaines' && <Globe className="w-3 h-3" />}
+                <span>
+                  {filter === 'Africaines'
+                    ? `Africaines (${africanCount})`
+                    : filter === 'Toutes'
+                    ? 'Toutes'
+                    : filter === 'Féminin'
+                    ? 'Fém.'
+                    : filter === 'Masculin'
+                    ? 'Masc.'
+                    : 'Neutre'}
+                </span>
               </button>
             ))}
           </div>
@@ -144,13 +182,15 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
       {/* Description */}
       <p className="text-xs text-[#9CA3AF]">
         {voiceSource === 'gemini'
-          ? 'Sélectionnez une voix préconstruite Gemini TTS ou écoutez un extrait de démonstration.'
+          ? activeFilter === 'Africaines'
+            ? 'Voix africaines (Lingala RDC, Yoruba, Swahili, Wolof, Français d’Afrique) avec diction purement originale.'
+            : 'Sélectionnez une voix studio ou écoutez un extrait de démonstration.'
           : 'Sélectionnez un de vos avatars vocaux personnalisés pour synthétiser vos textes.'}
       </p>
 
-      {/* Tab Content: GEMINI VOICES */}
+      {/* Tab Content: GEMINI VOICES & AFRICAN PERSONAS */}
       {voiceSource === 'gemini' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[380px] overflow-y-auto pr-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[400px] overflow-y-auto pr-1">
           {filteredVoices.map((voice) => {
             const isSelected = selectedVoiceId === voice.id;
             const isAuditioning = auditioningVoice === voice.id;
@@ -159,7 +199,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
             return (
               <div
                 key={voice.id}
-                onClick={() => !disabled && onSelectVoice(voice.id)}
+                onClick={() => !disabled && onSelectVoice(voice)}
                 className={`group relative p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
                   isSelected
                     ? 'bg-[#23232D] border-[#C6FF5B] shadow-[0_0_15px_rgba(198,255,91,0.12)] ring-1 ring-[#C6FF5B]/40'
@@ -167,13 +207,13 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
                 } ${disabled ? 'opacity-50 pointer-events-none' : ''}`}
               >
                 <div className="flex items-start justify-between gap-1.5">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm text-[#F4F4F5] tracking-tight">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-semibold text-sm text-[#F4F4F5] tracking-tight truncate">
                         {voice.name}
                       </span>
                       <span
-                        className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${
+                        className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border shrink-0 ${
                           voice.gender === 'Féminin'
                             ? 'bg-rose-500/10 text-rose-300 border-rose-500/20'
                             : voice.gender === 'Masculin'
@@ -184,7 +224,14 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
                         {voice.gender}
                       </span>
                     </div>
-                    <div className="text-[11px] text-[#C6FF5B] font-medium mt-0.5">
+
+                    {voice.originTag && (
+                      <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-[#C6FF5B]/10 border border-[#C6FF5B]/25 text-[10px] font-semibold text-[#C6FF5B]">
+                        <span>{voice.originTag}</span>
+                      </div>
+                    )}
+
+                    <div className="text-[11px] text-[#C6FF5B] font-medium mt-1">
                       {voice.characteristic}
                     </div>
                   </div>
@@ -192,7 +239,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
-                      onClick={(e) => handleAudition(e, voice.id)}
+                      onClick={(e) => handleAudition(e, voice)}
                       className={`w-7 h-7 rounded-lg border flex items-center justify-center transition cursor-pointer ${
                         isAuditioning
                           ? 'bg-[#C6FF5B] text-[#101114] border-[#C6FF5B]'
