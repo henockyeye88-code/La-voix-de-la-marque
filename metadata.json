@@ -1,0 +1,6 @@
+{
+  "name": "La voix de la marque",
+  "description": "Studio de voix off professionnelle haute fidélité propulsé par Gemini Text-to-Speech.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

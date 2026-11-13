@@ -1,0 +1,19 @@
+[
+  {
+    "id": "avatar_demo_official",
+    "name": "Voix officielle de la marque",
+    "provider": "elevenlabs",
+    "providerVoiceId": "21m00Tcm4TlvDq8ikWAM",
+    "status": "ready",
+    "createdAt": 1730100000000,
+    "updatedAt": 1730100000000,
+    "consentConfirmedAt": 1730100000000,
+    "consentVersion": "v1.0-fr",
+    "audioSampleMeta": {
+      "filename": "enregistrement-reference-voix-marque.wav",
+      "durationSec": 24.5,
+      "sizeBytes": 1176000,
+      "mimeType": "audio/wav"
+    }
+  }
+]
